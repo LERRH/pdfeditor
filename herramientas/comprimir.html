@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comprimir PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 14 10 14 10 20"></polyline>
+          <polyline points="20 10 14 10 14 4"></polyline>
+          <line x1="14" y1="10" x2="21" y2="3"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+      </div>
+      <h1>Comprimir PDF</h1>
+      <p class="subtitle">Reduce el tamaño del archivo reorganizando su estructura interna. La reducción es ligera: funciona mejor en PDFs generados por herramientas antiguas que no comprimen sus objetos.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Comprimir PDF</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  async function comprimirPdf(archivo, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    avanzarProgreso(25, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true, updateMetadata: false });
+
+    avanzarProgreso(60, 'Reorganizando estructura interna...');
+    return pdfDoc.save({ useObjectStreams: true });
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+    const tamanoOriginal = archivoSeleccionado.size;
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const pdfBytes = await comprimirPdf(archivoSeleccionado, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_comprimido.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      const tamanoNuevo = pdfBytes.length;
+      const reduccion = tamanoOriginal > 0 ? Math.round((1 - tamanoNuevo / tamanoOriginal) * 100) : 0;
+
+      let mensajeTamano;
+      if (reduccion > 0) {
+        mensajeTamano = `<div class="size-compare"><span class="size-old">${formatBytes(tamanoOriginal)}</span><span class="size-arrow">&rarr;</span><span class="size-new">${formatBytes(tamanoNuevo)} (-${reduccion}%)</span></div>`;
+      } else {
+        mensajeTamano = `<div class="size-compare"><span>${formatBytes(tamanoOriginal)} &rarr; ${formatBytes(tamanoNuevo)} (este PDF ya estaba optimizado, la reducción fue mínima)</span></div>`;
+      }
+
+      mostrarAlerta('success', `PDF procesado correctamente. La descarga debería comenzar automáticamente.${mensajeTamano}`);
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo comprimir el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

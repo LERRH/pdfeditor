@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eliminar marca de agua de un PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <line x1="9" y1="13" x2="15" y2="17"></line>
+          <line x1="15" y1="13" x2="9" y2="17"></line>
+        </svg>
+      </div>
+      <h1>Eliminador de Marca de Agua</h1>
+      <p class="subtitle">Quita la firma digital diagonal repetida de tus documentos PDF de forma rápida y segura.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Eliminar marca de agua</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  function bytesALatin1(bytes) {
+    let resultado = '';
+    for (let i = 0; i < bytes.length; i++) {
+      resultado += String.fromCharCode(bytes[i]);
+    }
+    return resultado;
+  }
+
+  function decodificarStream(rawStream) {
+    const { PDFName, PDFArray } = PDFLib;
+    const filtro = rawStream.dict.lookup(PDFName.of('Filter'));
+    let bytes = rawStream.contents;
+    if (!filtro) return bytes;
+
+    const nombresFiltro = filtro instanceof PDFArray
+      ? filtro.asArray().map((f) => f.toString())
+      : [filtro.toString()];
+
+    for (const nombre of nombresFiltro) {
+      if (nombre === '/FlateDecode') {
+        bytes = pako.inflate(bytes);
+      } else {
+        throw new Error('Filtro no soportado: ' + nombre);
+      }
+    }
+    return bytes;
+  }
+
+  function obtenerRecursos(paginaNode) {
+    if (typeof paginaNode.Resources === 'function') {
+      const recursos = paginaNode.Resources();
+      if (recursos) return recursos;
+    }
+    return paginaNode.lookup(PDFLib.PDFName.of('Resources'));
+  }
+
+  async function eliminarMarcaDeAgua(arrayBuffer, avanzarProgreso) {
+    const { PDFDocument, PDFName, PDFNumber, PDFRawStream } = PDFLib;
+
+    avanzarProgreso(20, 'Analizando estructura del PDF...');
+    const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true, updateMetadata: false });
+
+    let marcasEliminadas = 0;
+    const paginas = pdfDoc.getPages();
+
+    avanzarProgreso(45, 'Buscando marca de agua...');
+    for (const pagina of paginas) {
+      const resources = obtenerRecursos(pagina.node);
+      if (!resources) continue;
+
+      let xObjectDict;
+      try {
+        xObjectDict = resources.lookup(PDFName.of('XObject'));
+      } catch (e) {
+        continue;
+      }
+      if (!xObjectDict) continue;
+
+      for (const clave of xObjectDict.keys()) {
+        let xObject;
+        try {
+          xObject = xObjectDict.lookup(clave);
+        } catch (e) {
+          continue;
+        }
+        if (!(xObject instanceof PDFRawStream)) continue;
+
+        const subtype = xObject.dict.lookup(PDFName.of('Subtype'));
+        if (!subtype || subtype.toString() !== '/Form') continue;
+
+        let datos;
+        try {
+          datos = decodificarStream(xObject);
+        } catch (e) {
+          continue;
+        }
+
+        const texto = bytesALatin1(datos);
+        const cuentaTm = (texto.match(/Tm/g) || []).length;
+
+        if (texto.includes('.707107') && cuentaTm > 5) {
+          xObject.contents = new Uint8Array(0);
+          xObject.dict.set(PDFName.of('Length'), PDFNumber.of(0));
+          xObject.dict.delete(PDFName.of('Filter'));
+          marcasEliminadas++;
+        }
+      }
+    }
+
+    avanzarProgreso(80, 'Generando PDF final...');
+    const pdfBytes = await pdfDoc.save();
+
+    return { pdfBytes, marcasEliminadas };
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const arrayBuffer = await archivoSeleccionado.arrayBuffer();
+      const { pdfBytes, marcasEliminadas } = await eliminarMarcaDeAgua(arrayBuffer, setProgreso);
+
+      setProgreso(100, 'Completado');
+
+      const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+      const nombreSalida = `${nombreBase}_sin_marca.pdf`;
+
+      if (marcasEliminadas === 0) {
+        ocultarProgreso();
+        mostrarAlerta('warning', 'No se detectó ninguna marca de agua conocida en este PDF. El archivo no fue modificado.');
+        return;
+      }
+
+      descargarBlob(pdfBytes, nombreSalida, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', `Marca de agua eliminada correctamente. La descarga de <strong>${nombreSalida}</strong> debería comenzar automáticamente.`);
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo procesar el PDF. Verifica que el archivo no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extraer texto de un PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <line x1="10" y1="9" x2="8" y2="9"></line>
+        </svg>
+      </div>
+      <h1>Extraer texto</h1>
+      <p class="subtitle">Saca todo el texto seleccionable de un PDF y descárgalo como archivo .txt.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Extraer texto</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const procesarBtn = document.getElementById('procesarBtn');
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  async function extraerTexto(archivo, avanzarProgreso) {
+    avanzarProgreso(15, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+    let textoCompleto = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      avanzarProgreso(20 + Math.round((i / pdf.numPages) * 65), `Leyendo página ${i} de ${pdf.numPages}...`);
+      const page = await pdf.getPage(i);
+      const contenido = await page.getTextContent();
+      const textoPagina = contenido.items.map((item) => item.str).join(' ');
+      textoCompleto += `--- Página ${i} ---\n${textoPagina.trim()}\n\n`;
+    }
+
+    return textoCompleto.trim();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const texto = await extraerTexto(archivoSeleccionado, setProgreso);
+      setProgreso(100, 'Completado');
+
+      if (!texto) {
+        ocultarProgreso();
+        mostrarAlerta('warning', 'No se encontró texto seleccionable en este PDF (puede ser un documento escaneado como imagen).');
+        return;
+      }
+
+      descargarBlob(new TextEncoder().encode(texto), `${nombreBase}.txt`, 'text/plain');
+
+      ocultarProgreso();
+      mostrarAlerta('success', `Texto extraído correctamente. La descarga de <strong>${nombreBase}.txt</strong> debería comenzar automáticamente.`);
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

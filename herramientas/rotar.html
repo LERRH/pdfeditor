@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rotar páginas de un PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+      </div>
+      <h1>Rotar páginas</h1>
+      <p class="subtitle">Gira las páginas de tu PDF 90°, 180° o 270°.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="field">
+          <label for="anguloSelect">Ángulo de rotación</label>
+          <select id="anguloSelect">
+            <option value="90">90° (sentido horario)</option>
+            <option value="180">180°</option>
+            <option value="270">270° (90° antihorario)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="alcanceSelect">Páginas a rotar</label>
+          <select id="alcanceSelect">
+            <option value="todas">Todas las páginas</option>
+            <option value="especifica">Una página específica</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="campoPaginaEspecifica">
+          <label for="paginaInput">Número de página</label>
+          <input type="number" id="paginaInput" min="1" value="1">
+          <p class="field-hint" id="totalPaginasTexto"></p>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Rotar PDF</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const anguloSelect = document.getElementById('anguloSelect');
+  const alcanceSelect = document.getElementById('alcanceSelect');
+  const campoPaginaEspecifica = document.getElementById('campoPaginaEspecifica');
+  const paginaInput = document.getElementById('paginaInput');
+  const totalPaginasTexto = document.getElementById('totalPaginasTexto');
+
+  let archivoSeleccionado = null;
+  let totalPaginas = 0;
+
+  alcanceSelect.addEventListener('change', () => {
+    campoPaginaEspecifica.classList.toggle('hidden', alcanceSelect.value !== 'especifica');
+  });
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: async (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      if (!file) return;
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true });
+        totalPaginas = pdfDoc.getPageCount();
+        totalPaginasTexto.textContent = `Este PDF tiene ${totalPaginas} página(s).`;
+        paginaInput.max = totalPaginas;
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+        procesarBtn.disabled = true;
+      }
+    }
+  });
+
+  async function rotarPdf(archivo, anguloDelta, paginaEspecifica, avanzarProgreso) {
+    const { PDFDocument, degrees } = PDFLib;
+    avanzarProgreso(20, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+
+    const paginas = pdfDoc.getPages();
+    if (paginaEspecifica && (paginaEspecifica < 1 || paginaEspecifica > paginas.length)) {
+      throw new Error('PAGINA_INVALIDA');
+    }
+    const objetivo = paginaEspecifica ? [paginas[paginaEspecifica - 1]] : paginas;
+
+    avanzarProgreso(55, 'Rotando páginas...');
+    for (const pagina of objetivo) {
+      const actual = pagina.getRotation().angle;
+      pagina.setRotation(degrees((actual + anguloDelta) % 360));
+    }
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return pdfDoc.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const anguloDelta = parseInt(anguloSelect.value, 10);
+    const paginaEspecifica = alcanceSelect.value === 'especifica' ? parseInt(paginaInput.value, 10) : null;
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const pdfBytes = await rotarPdf(archivoSeleccionado, anguloDelta, paginaEspecifica, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_rotado.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', 'PDF rotado correctamente. La descarga debería comenzar automáticamente.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      if (err.message === 'PAGINA_INVALIDA') {
+        mostrarAlerta('error', `El número de página debe estar entre 1 y ${totalPaginas}.`);
+      } else {
+        mostrarAlerta('error', 'No se pudo rotar el PDF. Verifica que no esté dañado o protegido con contraseña.');
+      }
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

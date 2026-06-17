@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dividir PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+          <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+          <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+        </svg>
+      </div>
+      <h1>Dividir PDF</h1>
+      <p class="subtitle">Extrae un rango de páginas o separa todas las páginas en archivos individuales.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="option-group">
+          <label class="option-row selected" id="filaRango">
+            <input type="radio" name="modo" value="rango" checked>
+            <div style="flex:1">
+              <div class="option-label">Extraer un rango de páginas</div>
+              <div class="option-desc" id="totalPaginasTexto">Indica qué páginas quieres conservar.</div>
+              <div class="option-extra">
+                <input type="text" id="rangoInput" placeholder="Ej: 1-3, 5">
+              </div>
+            </div>
+          </label>
+          <label class="option-row" id="filaTodas">
+            <input type="radio" name="modo" value="todas">
+            <div style="flex:1">
+              <div class="option-label">Separar todas las páginas</div>
+              <div class="option-desc">Crea un PDF por cada página y los descarga en un .zip.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Dividir PDF</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const rangoInput = document.getElementById('rangoInput');
+  const totalPaginasTexto = document.getElementById('totalPaginasTexto');
+  const filaRango = document.getElementById('filaRango');
+  const filaTodas = document.getElementById('filaTodas');
+
+  let archivoSeleccionado = null;
+  let totalPaginas = 0;
+
+  document.querySelectorAll('input[name="modo"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        filaRango.classList.toggle('selected', e.target.value === 'rango');
+        filaTodas.classList.toggle('selected', e.target.value === 'todas');
+      }
+    });
+  });
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: async (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      if (!file) return;
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true });
+        totalPaginas = pdfDoc.getPageCount();
+        totalPaginasTexto.textContent = `Este PDF tiene ${totalPaginas} página(s). Ej: 1-3, 5`;
+        rangoInput.placeholder = `1-${totalPaginas}`;
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+        procesarBtn.disabled = true;
+      }
+    }
+  });
+
+  function parsearRango(rango, total) {
+    const indices = new Set();
+    for (const parte of rango.split(',')) {
+      const trozo = parte.trim();
+      if (!trozo) continue;
+      if (trozo.includes('-')) {
+        const [ini, fin] = trozo.split('-').map((n) => parseInt(n.trim(), 10));
+        if (Number.isNaN(ini) || Number.isNaN(fin)) continue;
+        for (let i = Math.min(ini, fin); i <= Math.max(ini, fin); i++) {
+          if (i >= 1 && i <= total) indices.add(i - 1);
+        }
+      } else {
+        const n = parseInt(trozo, 10);
+        if (!Number.isNaN(n) && n >= 1 && n <= total) indices.add(n - 1);
+      }
+    }
+    return Array.from(indices).sort((a, b) => a - b);
+  }
+
+  async function extraerRango(archivo, rango, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    avanzarProgreso(20, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const src = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const indices = parsearRango(rango, src.getPageCount());
+    if (indices.length === 0) throw new Error('RANGO_VACIO');
+
+    avanzarProgreso(55, 'Extrayendo páginas...');
+    const nuevo = await PDFDocument.create();
+    const paginas = await nuevo.copyPages(src, indices);
+    paginas.forEach((p) => nuevo.addPage(p));
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return { bytes: await nuevo.save(), cantidad: indices.length };
+  }
+
+  async function separarTodas(archivo, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    avanzarProgreso(15, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const src = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const total = src.getPageCount();
+    const resultados = [];
+
+    for (let i = 0; i < total; i++) {
+      avanzarProgreso(20 + Math.round((i / total) * 60), `Separando página ${i + 1} de ${total}...`);
+      const nuevo = await PDFDocument.create();
+      const [pagina] = await nuevo.copyPages(src, [i]);
+      nuevo.addPage(pagina);
+      const bytes = await nuevo.save();
+      resultados.push({ nombre: `pagina_${i + 1}.pdf`, bytes });
+    }
+
+    return resultados;
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const modo = document.querySelector('input[name="modo"]:checked').value;
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      if (modo === 'rango') {
+        const rango = rangoInput.value.trim();
+        if (!rango) {
+          ocultarProgreso();
+          mostrarAlerta('error', 'Escribe un rango de páginas (ej: 1-3, 5).');
+          return;
+        }
+
+        let resultado;
+        try {
+          resultado = await extraerRango(archivoSeleccionado, rango, setProgreso);
+        } catch (err) {
+          if (err.message === 'RANGO_VACIO') {
+            ocultarProgreso();
+            mostrarAlerta('error', `El rango "${rango}" no coincide con ninguna página de este PDF (tiene ${totalPaginas}).`);
+            return;
+          }
+          throw err;
+        }
+
+        setProgreso(100, 'Completado');
+        descargarBlob(resultado.bytes, `${nombreBase}_paginas.pdf`, 'application/pdf');
+        ocultarProgreso();
+        mostrarAlerta('success', `Se extrajeron <strong>${resultado.cantidad}</strong> página(s). La descarga debería comenzar automáticamente.`);
+      } else {
+        const archivos = await separarTodas(archivoSeleccionado, setProgreso);
+        setProgreso(95, 'Empaquetando .zip...');
+        await descargarZip(archivos, `${nombreBase}_paginas.zip`);
+        setProgreso(100, 'Completado');
+        ocultarProgreso();
+        mostrarAlerta('success', `Se separaron <strong>${archivos.length}</strong> páginas en archivos individuales dentro de un .zip.`);
+      }
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo dividir el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

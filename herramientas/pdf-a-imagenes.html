@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF a imágenes</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="7" y="7" width="13" height="13" rx="2"></rect>
+          <path d="M4 16V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+      </div>
+      <h1>PDF a imágenes</h1>
+      <p class="subtitle">Convierte cada página de un PDF en una imagen PNG o JPG.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="field">
+          <label for="formatoSelect">Formato de imagen</label>
+          <select id="formatoSelect">
+            <option value="png">PNG (mejor calidad)</option>
+            <option value="jpeg">JPG (archivos más pequeños)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="escalaSelect">Resolución</label>
+          <select id="escalaSelect">
+            <option value="1">Normal (1x)</option>
+            <option value="2" selected>Alta (2x)</option>
+            <option value="3">Muy alta (3x)</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Convertir a imágenes</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const formatoSelect = document.getElementById('formatoSelect');
+  const escalaSelect = document.getElementById('escalaSelect');
+
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  function renderizarPagina(page, escala) {
+    return new Promise((resolve, reject) => {
+      const viewport = page.getViewport({ scale: escala });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+
+      page.render({ canvasContext: ctx, viewport }).promise
+        .then(() => resolve(canvas))
+        .catch(reject);
+    });
+  }
+
+  function canvasABlob(canvas, formato) {
+    const mime = formato === 'png' ? 'image/png' : 'image/jpeg';
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), mime, 0.92);
+    });
+  }
+
+  async function pdfAImagenes(archivo, formato, escala, avanzarProgreso) {
+    avanzarProgreso(10, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+    const resultados = [];
+    const extension = formato === 'png' ? 'png' : 'jpg';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      avanzarProgreso(15 + Math.round((i / pdf.numPages) * 75), `Renderizando página ${i} de ${pdf.numPages}...`);
+      const page = await pdf.getPage(i);
+      const canvas = await renderizarPagina(page, escala);
+      const blob = await canvasABlob(canvas, formato);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      resultados.push({ nombre: `pagina_${i}.${extension}`, bytes, mime: blob.type });
+    }
+
+    return resultados;
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const formato = formatoSelect.value;
+    const escala = parseFloat(escalaSelect.value);
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const imagenes = await pdfAImagenes(archivoSeleccionado, formato, escala, setProgreso);
+      setProgreso(95, 'Empaquetando...');
+
+      if (imagenes.length === 1) {
+        descargarBlob(imagenes[0].bytes, `${nombreBase}.${formato === 'png' ? 'png' : 'jpg'}`, imagenes[0].mime);
+        setProgreso(100, 'Completado');
+        ocultarProgreso();
+        mostrarAlerta('success', 'Imagen generada correctamente. La descarga debería comenzar automáticamente.');
+      } else {
+        await descargarZip(imagenes, `${nombreBase}_imagenes.zip`);
+        setProgreso(100, 'Completado');
+        ocultarProgreso();
+        mostrarAlerta('success', `Se generaron <strong>${imagenes.length}</strong> imágenes dentro de un .zip.`);
+      }
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo convertir el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

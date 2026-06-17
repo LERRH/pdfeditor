@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unir PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <h1>Unir PDF</h1>
+      <p class="subtitle">Combina varios PDFs en un solo archivo. Usa las flechas para ordenarlos antes de unir.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tus PDFs aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar varios archivos</p>
+        </div>
+      </div>
+
+      <div id="fileList" class="file-list"></div>
+
+      <button id="procesarBtn" class="btn-primary hidden" disabled>Unir PDFs</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivos...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tus PDFs nunca se suben a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  let archivosActuales = [];
+
+  initDropzoneMultiArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Solo se aceptan archivos PDF. Algunos archivos fueron ignorados.',
+    onCambio: (archivos) => {
+      archivosActuales = archivos;
+      const hayAlMenosDos = archivos.length >= 2;
+      procesarBtn.classList.toggle('hidden', archivos.length === 0);
+      procesarBtn.disabled = !hayAlMenosDos;
+      procesarBtn.textContent = archivos.length === 1
+        ? 'Agrega al menos un PDF más'
+        : 'Unir PDFs';
+    }
+  });
+
+  async function unirPdfs(archivos, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    const merged = await PDFDocument.create();
+
+    for (let i = 0; i < archivos.length; i++) {
+      avanzarProgreso(10 + Math.round((i / archivos.length) * 70), `Agregando ${archivos[i].name}...`);
+      const buffer = await archivos[i].arrayBuffer();
+      const src = await PDFDocument.load(buffer, { ignoreEncryption: true });
+      const paginas = await merged.copyPages(src, src.getPageIndices());
+      paginas.forEach((p) => merged.addPage(p));
+    }
+
+    avanzarProgreso(85, 'Generando PDF final...');
+    return merged.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (archivosActuales.length < 2) return;
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivos...');
+
+    try {
+      const pdfBytes = await unirPdfs(archivosActuales, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, 'documento_unido.pdf', 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', `Se unieron <strong>${archivosActuales.length}</strong> PDFs correctamente. La descarga debería comenzar automáticamente.`);
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo unir los PDFs. Verifica que ninguno esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = archivosActuales.length < 2;
+    }
+  });
+</script>
+</body>
+</html>
