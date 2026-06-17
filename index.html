@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Eliminador de Marca de Agua PDF · PNSU/MVCS</title>
+<title>Eliminador de Marca de Agua PDF</title>
 <style>
   :root {
     --azul: #1d4ed8;
@@ -261,7 +261,7 @@
         </svg>
       </div>
       <h1>Eliminador de Marca de Agua</h1>
-      <p class="subtitle">Quita la firma digital diagonal de documentos PDF del PNSU / MVCS de forma rápida y segura.</p>
+      <p class="subtitle">Quita la firma digital diagonal repetida de tus documentos PDF de forma rápida y segura.</p>
     </header>
 
     <div class="card">
@@ -530,7 +530,7 @@
 
       if (marcasEliminadas === 0) {
         ocultarProgreso();
-        mostrarAlerta('warning', 'No se detectó ninguna marca de agua conocida del PNSU/MVCS en este PDF. El archivo no fue modificado.');
+        mostrarAlerta('warning', 'No se detectó ninguna marca de agua conocida en este PDF. El archivo no fue modificado.');
         return;
       }
 
