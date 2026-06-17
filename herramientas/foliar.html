@@ -70,6 +70,14 @@
         </div>
 
         <div class="field">
+          <label for="formatoSelect">Formato del número</label>
+          <select id="formatoSelect">
+            <option value="simple">Simple (1, 2, 3...)</option>
+            <option value="pagina-total">Página / total (1 / 10, 2 / 10...)</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label for="numeroInicialInput">Número inicial</label>
           <input type="number" id="numeroInicialInput" min="1" value="1">
         </div>
@@ -107,6 +115,7 @@
   const opciones = document.getElementById('opciones');
   const numeroInicialInput = document.getElementById('numeroInicialInput');
   const posicionSelect = document.getElementById('posicionSelect');
+  const formatoSelect = document.getElementById('formatoSelect');
   const totalPaginasTexto = document.getElementById('totalPaginasTexto');
   const filaAdelante = document.getElementById('filaAdelante');
   const filaAtras = document.getElementById('filaAtras');
@@ -146,7 +155,7 @@
     }
   });
 
-  async function foliarPdf(archivo, direccion, numeroInicial, posicion, avanzarProgreso) {
+  async function foliarPdf(archivo, direccion, numeroInicial, posicion, formato, avanzarProgreso) {
     const { PDFDocument, StandardFonts, rgb } = PDFLib;
     avanzarProgreso(15, 'Leyendo PDF...');
     const buffer = await archivo.arrayBuffer();
@@ -162,7 +171,7 @@
         ? numeroInicial + (total - 1 - i)
         : numeroInicial + i;
 
-      const texto = String(numero);
+      const texto = formato === 'pagina-total' ? `${numero} / ${total}` : String(numero);
       const tamanoFuente = 11;
       const anchoTexto = font.widthOfTextAtSize(texto, tamanoFuente);
       const margen = 24;
@@ -196,6 +205,7 @@
     const direccion = document.querySelector('input[name="direccion"]:checked').value;
     const numeroInicial = parseInt(numeroInicialInput.value, 10) || 1;
     const posicion = posicionSelect.value;
+    const formato = formatoSelect.value;
     const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
 
     ocultarResultado();
@@ -203,7 +213,7 @@
     setProgreso(5, 'Leyendo archivo...');
 
     try {
-      const pdfBytes = await foliarPdf(archivoSeleccionado, direccion, numeroInicial, posicion, setProgreso);
+      const pdfBytes = await foliarPdf(archivoSeleccionado, direccion, numeroInicial, posicion, formato, setProgreso);
       setProgreso(100, 'Completado');
 
       descargarBlob(pdfBytes, `${nombreBase}_foliado.pdf`, 'application/pdf');
