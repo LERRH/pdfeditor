@@ -389,6 +389,62 @@ footer p {
   color: #94a3b8;
 }
 
+/* Cuadrícula de miniaturas de páginas (organizar PDF) */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.page-card {
+  border: 1.5px solid var(--gris-borde);
+  border-radius: 12px;
+  background: var(--gris-fondo);
+  padding: 8px;
+  cursor: grab;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.page-card.drag-over { border-color: var(--azul); transform: scale(1.03); }
+.page-card.dragging { opacity: 0.4; }
+
+.page-card-thumb {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid var(--gris-borde);
+}
+
+.page-card-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  transition: transform 0.15s ease;
+}
+
+.page-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.page-card-number {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--azul);
+  background: var(--azul-claro);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.page-card-actions { display: flex; gap: 2px; }
+
 /* Página de inicio: cuadrícula de herramientas */
 .tools-grid {
   display: grid;

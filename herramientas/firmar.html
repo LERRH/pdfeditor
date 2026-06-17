@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firmar PDF (firma visual)</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17s3-1 5-3 3-5 5-7 5 1 5 1"></path>
+          <path d="M3 21h18"></path>
+        </svg>
+      </div>
+      <h1>Firmar PDF</h1>
+      <p class="subtitle">Dibuja o sube una firma/sello e insértala en una página del documento.</p>
+    </header>
+
+    <div class="card">
+      <div class="alert alert-warning" style="margin-bottom:18px;">
+        <span>Esto agrega una <strong>firma o sello visual</strong> (una imagen) al documento. No es una firma digital criptográfica con validez legal — para eso, sigue usando tu certificado/ReFirma.</span>
+      </div>
+
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="option-group">
+          <label class="option-row selected" id="filaDibujar">
+            <input type="radio" name="modoFirma" value="dibujar" checked>
+            <div style="flex:1">
+              <div class="option-label">Dibujar mi firma</div>
+              <div class="option-desc">Dibuja con el mouse o el dedo en el recuadro de abajo.</div>
+              <div class="option-extra" id="panelDibujar">
+                <canvas id="firmaCanvas" width="400" height="150" style="width:100%; max-width:400px; height:150px; display:block; border:1px solid var(--gris-borde); border-radius:10px; background:#fff; touch-action:none; cursor:crosshair;"></canvas>
+                <button type="button" id="limpiarFirmaBtn" class="btn-secondary" style="max-width:160px;">Limpiar</button>
+              </div>
+            </div>
+          </label>
+          <label class="option-row" id="filaSubir">
+            <input type="radio" name="modoFirma" value="subir">
+            <div style="flex:1">
+              <div class="option-label">Subir una imagen</div>
+              <div class="option-desc">Usa una foto o recorte de tu firma/sello (PNG o JPG, fondo transparente recomendado).</div>
+              <div class="option-extra hidden" id="panelSubir">
+                <input type="file" id="imagenFirmaInput" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field">
+          <label for="paginaInput">Página donde colocar la firma</label>
+          <input type="number" id="paginaInput" min="1" value="1">
+          <p class="field-hint" id="totalPaginasTexto"></p>
+        </div>
+
+        <div class="field">
+          <label for="posicionSelect">Posición</label>
+          <select id="posicionSelect">
+            <option value="inferior-derecha">Esquina inferior derecha</option>
+            <option value="inferior-izquierda">Esquina inferior izquierda</option>
+            <option value="superior-derecha">Esquina superior derecha</option>
+            <option value="superior-izquierda">Esquina superior izquierda</option>
+            <option value="centro">Centro de la página</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="anchoSelect">Tamaño de la firma</label>
+          <select id="anchoSelect">
+            <option value="100">Pequeña</option>
+            <option value="150" selected>Mediana</option>
+            <option value="220">Grande</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Firmar PDF</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const paginaInput = document.getElementById('paginaInput');
+  const posicionSelect = document.getElementById('posicionSelect');
+  const anchoSelect = document.getElementById('anchoSelect');
+  const totalPaginasTexto = document.getElementById('totalPaginasTexto');
+  const filaDibujar = document.getElementById('filaDibujar');
+  const filaSubir = document.getElementById('filaSubir');
+  const panelDibujar = document.getElementById('panelDibujar');
+  const panelSubir = document.getElementById('panelSubir');
+  const imagenFirmaInput = document.getElementById('imagenFirmaInput');
+  const limpiarFirmaBtn = document.getElementById('limpiarFirmaBtn');
+  const firmaCanvas = document.getElementById('firmaCanvas');
+
+  let archivoSeleccionado = null;
+  let totalPaginas = 0;
+  let imagenFirmaSubida = null;
+  let huboTrazo = false;
+
+  document.querySelectorAll('input[name="modoFirma"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      if (!e.target.checked) return;
+      const esDibujar = e.target.value === 'dibujar';
+      filaDibujar.classList.toggle('selected', esDibujar);
+      filaSubir.classList.toggle('selected', !esDibujar);
+      panelDibujar.classList.toggle('hidden', !esDibujar);
+      panelSubir.classList.toggle('hidden', esDibujar);
+    });
+  });
+
+  imagenFirmaInput.addEventListener('change', (e) => {
+    imagenFirmaSubida = e.target.files[0] || null;
+  });
+
+  const ctx = firmaCanvas.getContext('2d');
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#1e293b';
+  let dibujando = false;
+  let ultimaPos = null;
+
+  function obtenerPos(e) {
+    const rect = firmaCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * (firmaCanvas.width / rect.width),
+      y: (clientY - rect.top) * (firmaCanvas.height / rect.height),
+    };
+  }
+
+  function iniciarTrazo(e) {
+    dibujando = true;
+    huboTrazo = true;
+    ultimaPos = obtenerPos(e);
+  }
+
+  function moverTrazo(e) {
+    if (!dibujando) return;
+    e.preventDefault();
+    const pos = obtenerPos(e);
+    ctx.beginPath();
+    ctx.moveTo(ultimaPos.x, ultimaPos.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    ultimaPos = pos;
+  }
+
+  function terminarTrazo() { dibujando = false; }
+
+  firmaCanvas.addEventListener('mousedown', iniciarTrazo);
+  firmaCanvas.addEventListener('mousemove', moverTrazo);
+  window.addEventListener('mouseup', terminarTrazo);
+  firmaCanvas.addEventListener('touchstart', iniciarTrazo);
+  firmaCanvas.addEventListener('touchmove', moverTrazo);
+  firmaCanvas.addEventListener('touchend', terminarTrazo);
+
+  limpiarFirmaBtn.addEventListener('click', () => {
+    ctx.clearRect(0, 0, firmaCanvas.width, firmaCanvas.height);
+    huboTrazo = false;
+  });
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: async (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      if (!file) return;
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true });
+        totalPaginas = pdfDoc.getPageCount();
+        totalPaginasTexto.textContent = `Este PDF tiene ${totalPaginas} página(s).`;
+        paginaInput.max = totalPaginas;
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+        procesarBtn.disabled = true;
+      }
+    }
+  });
+
+  async function obtenerBytesFirma(modo) {
+    if (modo === 'subir') {
+      if (!imagenFirmaSubida) throw new Error('SIN_IMAGEN');
+      const buffer = await imagenFirmaSubida.arrayBuffer();
+      const esPng = imagenFirmaSubida.type === 'image/png' || imagenFirmaSubida.name.toLowerCase().endsWith('.png');
+      return { bytes: new Uint8Array(buffer), tipo: esPng ? 'png' : 'jpg' };
+    }
+
+    if (!huboTrazo) throw new Error('SIN_FIRMA');
+    const dataUrl = firmaCanvas.toDataURL('image/png');
+    const base64 = dataUrl.split(',')[1];
+    const binario = atob(base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    return { bytes, tipo: 'png' };
+  }
+
+  async function firmarPdf(archivo, firmaBytes, firmaTipo, pagina, posicion, anchoDeseado, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    avanzarProgreso(20, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+
+    const imagen = firmaTipo === 'png' ? await pdfDoc.embedPng(firmaBytes) : await pdfDoc.embedJpg(firmaBytes);
+    const escala = anchoDeseado / imagen.width;
+    const ancho = anchoDeseado;
+    const alto = imagen.height * escala;
+
+    const paginas = pdfDoc.getPages();
+    if (pagina < 1 || pagina > paginas.length) throw new Error('PAGINA_INVALIDA');
+    const pageObj = paginas[pagina - 1];
+    const { width, height } = pageObj.getSize();
+    const margen = 30;
+
+    let x, y;
+    switch (posicion) {
+      case 'superior-izquierda': x = margen; y = height - margen - alto; break;
+      case 'superior-derecha': x = width - margen - ancho; y = height - margen - alto; break;
+      case 'inferior-izquierda': x = margen; y = margen; break;
+      case 'centro': x = (width - ancho) / 2; y = (height - alto) / 2; break;
+      default: x = width - margen - ancho; y = margen;
+    }
+
+    avanzarProgreso(60, 'Insertando firma...');
+    pageObj.drawImage(imagen, { x, y, width: ancho, height: alto });
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return pdfDoc.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const modo = document.querySelector('input[name="modoFirma"]:checked').value;
+    const pagina = parseInt(paginaInput.value, 10) || 1;
+    const posicion = posicionSelect.value;
+    const ancho = parseInt(anchoSelect.value, 10);
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Preparando firma...');
+
+    try {
+      let firma;
+      try {
+        firma = await obtenerBytesFirma(modo);
+      } catch (err) {
+        ocultarProgreso();
+        if (err.message === 'SIN_FIRMA') {
+          mostrarAlerta('error', 'Dibuja una firma antes de continuar, o cambia a "Subir una imagen".');
+        } else {
+          mostrarAlerta('error', 'Selecciona una imagen de firma (PNG o JPG) antes de continuar.');
+        }
+        return;
+      }
+
+      const pdfBytes = await firmarPdf(archivoSeleccionado, firma.bytes, firma.tipo, pagina, posicion, ancho, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_firmado.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', 'Firma insertada correctamente. La descarga debería comenzar automáticamente.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      if (err.message === 'PAGINA_INVALIDA') {
+        mostrarAlerta('error', `El número de página debe estar entre 1 y ${totalPaginas}.`);
+      } else {
+        mostrarAlerta('error', 'No se pudo firmar el PDF. Verifica que no esté dañado o protegido con contraseña.');
+      }
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editar metadatos de un PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <line x1="9" y1="13" x2="15" y2="13"></line>
+          <line x1="9" y1="17" x2="13" y2="17"></line>
+        </svg>
+      </div>
+      <h1>Editar metadatos</h1>
+      <p class="subtitle">Cambia el título, autor, asunto y palabras clave guardados dentro del PDF.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="field">
+          <label for="tituloInput">Título</label>
+          <input type="text" id="tituloInput" placeholder="Sin título">
+        </div>
+        <div class="field">
+          <label for="autorInput">Autor</label>
+          <input type="text" id="autorInput" placeholder="Sin autor">
+        </div>
+        <div class="field">
+          <label for="asuntoInput">Asunto</label>
+          <input type="text" id="asuntoInput" placeholder="Sin asunto">
+        </div>
+        <div class="field">
+          <label for="palabrasInput">Palabras clave (separadas por coma)</label>
+          <input type="text" id="palabrasInput" placeholder="ej: informe, 2026, proyecto">
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Guardar metadatos</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const tituloInput = document.getElementById('tituloInput');
+  const autorInput = document.getElementById('autorInput');
+  const asuntoInput = document.getElementById('asuntoInput');
+  const palabrasInput = document.getElementById('palabrasInput');
+
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: async (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      if (!file) return;
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true, updateMetadata: false });
+        tituloInput.value = pdfDoc.getTitle() || '';
+        autorInput.value = pdfDoc.getAuthor() || '';
+        asuntoInput.value = pdfDoc.getSubject() || '';
+        palabrasInput.value = (pdfDoc.getKeywords() || '').toString();
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+        procesarBtn.disabled = true;
+      }
+    }
+  });
+
+  async function guardarMetadatos(archivo, datos, avanzarProgreso) {
+    const { PDFDocument } = PDFLib;
+    avanzarProgreso(20, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true, updateMetadata: false });
+
+    avanzarProgreso(55, 'Actualizando metadatos...');
+    pdfDoc.setTitle(datos.titulo);
+    pdfDoc.setAuthor(datos.autor);
+    pdfDoc.setSubject(datos.asunto);
+    pdfDoc.setKeywords(datos.palabras);
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return pdfDoc.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const datos = {
+      titulo: tituloInput.value.trim(),
+      autor: autorInput.value.trim(),
+      asunto: asuntoInput.value.trim(),
+      palabras: palabrasInput.value.split(',').map((p) => p.trim()).filter(Boolean),
+    };
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const pdfBytes = await guardarMetadatos(archivoSeleccionado, datos, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_metadatos.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', 'Metadatos guardados correctamente. La descarga debería comenzar automáticamente.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo guardar el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

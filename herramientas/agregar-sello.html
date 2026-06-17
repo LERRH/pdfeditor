@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agregar marca de agua / sello a un PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+          <line x1="8" y1="17" x2="16" y2="9"></line>
+        </svg>
+      </div>
+      <h1>Agregar marca de agua / sello</h1>
+      <p class="subtitle">Coloca un texto repetido en diagonal (COPIA, BORRADOR, CONFIDENCIAL...) sobre todas las páginas del PDF.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="field">
+          <label for="textoInput">Texto del sello</label>
+          <input type="text" id="textoInput" maxlength="40" value="COPIA" placeholder="Ej: COPIA, BORRADOR, CONFIDENCIAL">
+        </div>
+
+        <div class="field">
+          <label for="colorSelect">Color</label>
+          <select id="colorSelect">
+            <option value="gris">Gris</option>
+            <option value="rojo">Rojo</option>
+            <option value="negro">Negro</option>
+            <option value="azul">Azul</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="opacidadSelect">Opacidad</label>
+          <select id="opacidadSelect">
+            <option value="0.15">Muy sutil</option>
+            <option value="0.25" selected>Sutil (recomendado)</option>
+            <option value="0.4">Visible</option>
+            <option value="0.6">Marcada</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="tamanoSelect">Tamaño del texto</label>
+          <select id="tamanoSelect">
+            <option value="18">Pequeño</option>
+            <option value="28" selected>Medio</option>
+            <option value="40">Grande</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Agregar sello</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const textoInput = document.getElementById('textoInput');
+  const colorSelect = document.getElementById('colorSelect');
+  const opacidadSelect = document.getElementById('opacidadSelect');
+  const tamanoSelect = document.getElementById('tamanoSelect');
+
+  let archivoSeleccionado = null;
+
+  const COLORES = {
+    gris: [0.5, 0.5, 0.5],
+    rojo: [0.8, 0.15, 0.15],
+    negro: [0.1, 0.1, 0.1],
+    azul: [0.1, 0.3, 0.7],
+  };
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  async function agregarSello(archivo, texto, colorRgb, opacidad, tamanoFuente, avanzarProgreso) {
+    const { PDFDocument, StandardFonts, rgb, degrees } = PDFLib;
+    avanzarProgreso(15, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const color = rgb(colorRgb[0], colorRgb[1], colorRgb[2]);
+
+    const paginas = pdfDoc.getPages();
+    const pasoX = 220;
+    const pasoY = 170;
+
+    avanzarProgreso(40, 'Aplicando sello...');
+    paginas.forEach((pagina, i) => {
+      const { width, height } = pagina.getSize();
+      const filas = Math.ceil((height * 1.6) / pasoY) + 1;
+      const columnas = Math.ceil((width * 1.6) / pasoX) + 1;
+
+      for (let fila = 0; fila < filas; fila++) {
+        for (let col = 0; col < columnas; col++) {
+          const x = col * pasoX - width * 0.3;
+          const y = fila * pasoY - height * 0.3;
+          pagina.drawText(texto, {
+            x, y, size: tamanoFuente, font, color, opacity: opacidad,
+            rotate: degrees(45),
+          });
+        }
+      }
+    });
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return pdfDoc.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const texto = textoInput.value.trim();
+    if (!texto) {
+      mostrarAlerta('error', 'Escribe el texto que quieres usar como sello.');
+      return;
+    }
+
+    const colorRgb = COLORES[colorSelect.value];
+    const opacidad = parseFloat(opacidadSelect.value);
+    const tamanoFuente = parseInt(tamanoSelect.value, 10);
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const pdfBytes = await agregarSello(archivoSeleccionado, texto, colorRgb, opacidad, tamanoFuente, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_sellado.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', 'Sello agregado correctamente. La descarga debería comenzar automáticamente.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo agregar el sello. Verifica que el PDF no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
