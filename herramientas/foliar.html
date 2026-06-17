@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foliar PDF</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="10" y1="6" x2="21" y2="6"></line>
+          <line x1="10" y1="12" x2="21" y2="12"></line>
+          <line x1="10" y1="18" x2="21" y2="18"></line>
+          <path d="M4 6h1v4"></path>
+          <path d="M4 10h2"></path>
+          <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path>
+        </svg>
+      </div>
+      <h1>Foliar PDF</h1>
+      <p class="subtitle">Numera las páginas de tu PDF (foliación), de adelante hacia atrás o de atrás hacia adelante.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="option-group">
+          <label class="option-row selected" id="filaAdelante">
+            <input type="radio" name="direccion" value="adelante-atras" checked>
+            <div style="flex:1">
+              <div class="option-label">De adelante hacia atrás</div>
+              <div class="option-desc">La página 1 recibe el número inicial; el número aumenta hasta la última página.</div>
+            </div>
+          </label>
+          <label class="option-row" id="filaAtras">
+            <input type="radio" name="direccion" value="atras-adelante">
+            <div style="flex:1">
+              <div class="option-label">De atrás hacia adelante</div>
+              <div class="option-desc" id="totalPaginasTexto">La última página recibe el número inicial; el número aumenta hacia la primera página.</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="field">
+          <label for="numeroInicialInput">Número inicial</label>
+          <input type="number" id="numeroInicialInput" min="1" value="1">
+        </div>
+
+        <div class="field">
+          <label for="posicionSelect">Posición del número</label>
+          <select id="posicionSelect">
+            <option value="superior-derecha">Esquina superior derecha</option>
+            <option value="superior-izquierda">Esquina superior izquierda</option>
+            <option value="inferior-derecha">Esquina inferior derecha</option>
+            <option value="inferior-izquierda">Esquina inferior izquierda</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Foliar PDF</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const numeroInicialInput = document.getElementById('numeroInicialInput');
+  const posicionSelect = document.getElementById('posicionSelect');
+  const totalPaginasTexto = document.getElementById('totalPaginasTexto');
+  const filaAdelante = document.getElementById('filaAdelante');
+  const filaAtras = document.getElementById('filaAtras');
+
+  let archivoSeleccionado = null;
+  let totalPaginas = 0;
+
+  document.querySelectorAll('input[name="direccion"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        filaAdelante.classList.toggle('selected', e.target.value === 'adelante-atras');
+        filaAtras.classList.toggle('selected', e.target.value === 'atras-adelante');
+      }
+    });
+  });
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: async (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      if (!file) return;
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdfDoc = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true });
+        totalPaginas = pdfDoc.getPageCount();
+        totalPaginasTexto.textContent = `Este PDF tiene ${totalPaginas} página(s). La última recibe el número inicial; el número aumenta hacia la primera página.`;
+      } catch (err) {
+        console.error(err);
+        mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+        procesarBtn.disabled = true;
+      }
+    }
+  });
+
+  async function foliarPdf(archivo, direccion, numeroInicial, posicion, avanzarProgreso) {
+    const { PDFDocument, StandardFonts, rgb } = PDFLib;
+    avanzarProgreso(15, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const paginas = pdfDoc.getPages();
+    const total = paginas.length;
+
+    avanzarProgreso(45, 'Agregando numeración...');
+    for (let i = 0; i < total; i++) {
+      const pagina = paginas[i];
+      const numero = direccion === 'atras-adelante'
+        ? numeroInicial + (total - 1 - i)
+        : numeroInicial + i;
+
+      const texto = String(numero);
+      const tamanoFuente = 11;
+      const anchoTexto = font.widthOfTextAtSize(texto, tamanoFuente);
+      const margen = 24;
+      const { width, height } = pagina.getSize();
+
+      let x, y;
+      switch (posicion) {
+        case 'superior-izquierda':
+          x = margen; y = height - margen - tamanoFuente;
+          break;
+        case 'inferior-derecha':
+          x = width - margen - anchoTexto; y = margen;
+          break;
+        case 'inferior-izquierda':
+          x = margen; y = margen;
+          break;
+        default:
+          x = width - margen - anchoTexto; y = height - margen - tamanoFuente;
+      }
+
+      pagina.drawText(texto, { x, y, size: tamanoFuente, font, color: rgb(0, 0, 0) });
+    }
+
+    avanzarProgreso(85, 'Generando PDF...');
+    return pdfDoc.save();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const direccion = document.querySelector('input[name="direccion"]:checked').value;
+    const numeroInicial = parseInt(numeroInicialInput.value, 10) || 1;
+    const posicion = posicionSelect.value;
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const pdfBytes = await foliarPdf(archivoSeleccionado, direccion, numeroInicial, posicion, setProgreso);
+      setProgreso(100, 'Completado');
+
+      descargarBlob(pdfBytes, `${nombreBase}_foliado.pdf`, 'application/pdf');
+
+      ocultarProgreso();
+      mostrarAlerta('success', 'PDF foliado correctamente. La descarga debería comenzar automáticamente.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo foliar el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
