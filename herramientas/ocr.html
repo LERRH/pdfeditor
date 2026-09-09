@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCR: reconocer texto en PDF escaneado</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8.5"></path>
+          <path d="M14 2v6h6"></path>
+          <circle cx="16" cy="17" r="3"></circle>
+          <line x1="18.5" y1="19.5" x2="21" y2="22"></line>
+        </svg>
+      </div>
+      <h1>OCR de PDF escaneado</h1>
+      <p class="subtitle">Reconoce el texto de un PDF escaneado (imágenes) y descárgalo como archivo .txt.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="field">
+          <label for="idiomaSelect">Idioma del documento</label>
+          <select id="idiomaSelect">
+            <option value="spa" selected>Español</option>
+            <option value="eng">Inglés</option>
+            <option value="spa+eng">Español + Inglés</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Reconocer texto (OCR)</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor. La primera vez puede tardar un poco más porque se descargan los datos del idioma.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const idiomaSelect = document.getElementById('idiomaSelect');
+
+  let archivoSeleccionado = null;
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+    }
+  });
+
+  function renderizarPagina(page) {
+    return new Promise((resolve, reject) => {
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+
+      page.render({ canvasContext: ctx, viewport }).promise
+        .then(() => resolve(canvas))
+        .catch(reject);
+    });
+  }
+
+  const ETIQUETAS_ESTADO = {
+    'loading tesseract core': 'Cargando motor OCR...',
+    'initializing tesseract': 'Inicializando OCR...',
+    'loading language traineddata': 'Descargando datos de idioma...',
+    'initializing api': 'Preparando reconocimiento...'
+  };
+
+  async function ocrPdf(archivo, idioma, avanzarProgreso) {
+    avanzarProgreso(5, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const totalPaginas = pdf.numPages;
+
+    let paginaActual = 0;
+
+    const worker = await Tesseract.createWorker(idioma, 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text' && typeof m.progress === 'number' && paginaActual > 0) {
+          const progresoGlobal = (paginaActual - 1 + m.progress) / totalPaginas;
+          avanzarProgreso(10 + Math.round(progresoGlobal * 85), `Reconociendo texto: página ${paginaActual} de ${totalPaginas}...`);
+        } else if (ETIQUETAS_ESTADO[m.status]) {
+          avanzarProgreso(8, ETIQUETAS_ESTADO[m.status]);
+        }
+      }
+    });
+
+    let textoCompleto = '';
+    for (let i = 1; i <= totalPaginas; i++) {
+      paginaActual = i;
+      avanzarProgreso(10 + Math.round(((i - 1) / totalPaginas) * 85), `Reconociendo texto: página ${i} de ${totalPaginas}...`);
+      const page = await pdf.getPage(i);
+      const canvas = await renderizarPagina(page);
+      const { data } = await worker.recognize(canvas);
+      textoCompleto += `--- Página ${i} ---\n${data.text.trim()}\n\n`;
+    }
+
+    await worker.terminate();
+    return textoCompleto.trim();
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    const idioma = idiomaSelect.value;
+    const nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+
+    ocultarResultado();
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const texto = await ocrPdf(archivoSeleccionado, idioma, setProgreso);
+      setProgreso(100, 'Completado');
+
+      if (!texto) {
+        ocultarProgreso();
+        mostrarAlerta('warning', 'No se pudo reconocer texto en este PDF. Verifica que las páginas sean legibles.');
+        return;
+      }
+
+      descargarBlob(new TextEncoder().encode(texto), `${nombreBase}_ocr.txt`, 'text/plain');
+
+      ocultarProgreso();
+      mostrarAlerta('success', `Texto reconocido correctamente. La descarga de <strong>${nombreBase}_ocr.txt</strong> debería comenzar automáticamente.`);
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo procesar el PDF. Verifica tu conexión a internet (se necesita para el motor OCR) y que el archivo no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
