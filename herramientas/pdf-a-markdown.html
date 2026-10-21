@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF a Markdown</title>
+<link rel="stylesheet" href="../assets/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <a class="back-link" href="../index.html">&larr; Volver a herramientas</a>
+
+    <header>
+      <div class="icon-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+          <polyline points="6 15 6 9 9 12 12 9 12 15"></polyline>
+          <polyline points="15 12 17 14.5 19 12"></polyline>
+          <line x1="17" y1="9" x2="17" y2="14.5"></line>
+        </svg>
+      </div>
+      <h1>PDF a Markdown</h1>
+      <p class="subtitle">Convierte un PDF en un archivo .md conservando títulos, párrafos, listas, negritas y cursivas.</p>
+    </header>
+
+    <div class="card">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+        <div class="dropzone-content">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="dz-title">Arrastra tu PDF aquí</p>
+          <p class="dz-subtitle">o haz clic para seleccionar un archivo</p>
+        </div>
+      </div>
+
+      <div id="fileInfo" class="file-info hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <path d="M14 2v6h6"></path>
+        </svg>
+        <div class="file-details">
+          <p id="fileName" class="file-name"></p>
+          <p id="fileSize" class="file-size"></p>
+        </div>
+        <button id="removeFile" class="btn-icon" title="Quitar archivo">&#10005;</button>
+      </div>
+
+      <div id="opciones" class="hidden">
+        <div class="option-group">
+          <label class="option-row">
+            <input type="checkbox" id="optFormato" checked>
+            <div>
+              <div class="option-label">Detectar negrita y cursiva</div>
+              <div class="option-desc">Marca el texto con **negrita** y *cursiva* según la fuente del PDF.</div>
+            </div>
+          </label>
+          <label class="option-row">
+            <input type="checkbox" id="optEncabezados" checked>
+            <div>
+              <div class="option-label">Quitar encabezados, pies y números de página</div>
+              <div class="option-desc">Elimina el texto que se repite en casi todas las páginas.</div>
+            </div>
+          </label>
+          <label class="option-row">
+            <input type="checkbox" id="optSeparador">
+            <div>
+              <div class="option-label">Separar las páginas con una línea (---)</div>
+              <div class="option-desc">Útil si necesitas saber dónde empieza cada página.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <button id="procesarBtn" class="btn-primary hidden">Convertir a Markdown</button>
+
+      <div id="progressArea" class="progress-area hidden">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <p id="progressLabel" class="progress-label">Leyendo archivo...</p>
+      </div>
+
+      <div id="resultArea" class="result-area hidden"></div>
+
+      <div id="vistaPrevia" class="hidden">
+        <div class="field">
+          <label for="mdSalida">Vista previa (puedes editarla antes de descargar)</label>
+          <textarea id="mdSalida" class="md-preview" spellcheck="false"></textarea>
+        </div>
+        <button id="descargarBtn" class="btn-primary">Descargar .md</button>
+        <button id="copiarBtn" class="btn-secondary">Copiar al portapapeles</button>
+      </div>
+    </div>
+
+    <footer>
+      <p>Todo el procesamiento ocurre en tu navegador. Tu PDF nunca se sube a ningún servidor.</p>
+    </footer>
+  </div>
+
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="../assets/js/common.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const procesarBtn = document.getElementById('procesarBtn');
+  const opciones = document.getElementById('opciones');
+  const vistaPrevia = document.getElementById('vistaPrevia');
+  const mdSalida = document.getElementById('mdSalida');
+  const descargarBtn = document.getElementById('descargarBtn');
+  const copiarBtn = document.getElementById('copiarBtn');
+
+  let archivoSeleccionado = null;
+  let nombreBase = '';
+
+  initDropzoneUnArchivo({
+    extensionesAceptadas: ['.pdf'],
+    mensajeTipoInvalido: 'Por favor selecciona un archivo PDF válido.',
+    onArchivo: (file) => {
+      archivoSeleccionado = file;
+      procesarBtn.classList.toggle('hidden', !file);
+      opciones.classList.toggle('hidden', !file);
+      procesarBtn.disabled = !file;
+      vistaPrevia.classList.add('hidden');
+    }
+  });
+
+  const VIÑETAS = /^[•●▪■◦○‣∙·\-–—*]\s*/;
+  const NUMERADA = /^(\d{1,3})[.)]\s+/;
+
+  // Obtiene el nombre real de la fuente (p. ej. "ABCDEF+Arial-BoldMT") para detectar negrita/cursiva.
+  function estiloDeFuente(page, fontName) {
+    try {
+      const font = page.commonObjs.get(fontName);
+      const nombre = (font && font.name) || '';
+      return {
+        negrita: /bold|black|heavy|semibold|demi/i.test(nombre) || (font && font.bold) === true,
+        cursiva: /italic|oblique/i.test(nombre) || (font && font.italic) === true
+      };
+    } catch (e) {
+      return { negrita: false, cursiva: false };
+    }
+  }
+
+  // Agrupa los fragmentos de texto de una página en líneas (mismo "y").
+  async function leerLineasDePagina(page, detectarFormato) {
+    if (detectarFormato) {
+      // Fuerza la carga de las fuentes en commonObjs.
+      await page.getOperatorList();
+    }
+    const contenido = await page.getTextContent();
+    const items = contenido.items
+      .filter((it) => it.str && it.str.trim() !== '')
+      .map((it) => {
+        const estilo = detectarFormato ? estiloDeFuente(page, it.fontName) : { negrita: false, cursiva: false };
+        return {
+          texto: it.str,
+          x: it.transform[4],
+          y: it.transform[5],
+          ancho: it.width,
+          alto: Math.abs(it.transform[3]) || it.height || 0,
+          ...estilo
+        };
+      });
+
+    items.sort((a, b) => (Math.abs(b.y - a.y) > 2 ? b.y - a.y : a.x - b.x));
+
+    const lineas = [];
+    for (const it of items) {
+      const ultima = lineas[lineas.length - 1];
+      if (ultima && Math.abs(ultima.y - it.y) < Math.max(ultima.alto, it.alto) * 0.5) {
+        ultima.items.push(it);
+        ultima.alto = Math.max(ultima.alto, it.alto);
+      } else {
+        lineas.push({ y: it.y, alto: it.alto, items: [it] });
+      }
+    }
+
+    // Franja superior/inferior de la página donde suelen ir encabezados, pies y números de página.
+    const [, yMin, , yMax] = page.view;
+    const franja = (yMax - yMin) * 0.1;
+
+    return lineas.map((l) => {
+      l.items.sort((a, b) => a.x - b.x);
+      return {
+        y: l.y,
+        enMargen: l.y > yMax - franja || l.y < yMin + franja,
+        x: l.items[0].x,
+        alto: l.alto,
+        items: l.items,
+        textoPlano: unirItems(l.items, false).trim()
+      };
+    });
+  }
+
+  function envolver(texto, negrita, cursiva) {
+    const m = texto.match(/^(\s*)(.*?)(\s*)$/);
+    if (!m[2]) return texto;
+    let marca = '';
+    if (negrita) marca += '**';
+    if (cursiva) marca += '*';
+    return `${m[1]}${marca}${m[2]}${marca.split('').reverse().join('')}${m[3]}`;
+  }
+
+  // Une los fragmentos de una línea, insertando espacios y marcas de formato.
+  function unirItems(items, conFormato) {
+    const tramos = [];
+    let fin = null;
+    for (const it of items) {
+      let texto = it.texto;
+      if (fin !== null && it.x - fin > it.alto * 0.15 && !/\s$/.test(tramos.length ? tramos[tramos.length - 1].texto : '') && !/^\s/.test(texto)) {
+        texto = ' ' + texto;
+      }
+      fin = it.x + it.ancho;
+      const previo = tramos[tramos.length - 1];
+      if (previo && previo.negrita === it.negrita && previo.cursiva === it.cursiva) {
+        previo.texto += texto;
+      } else {
+        tramos.push({ texto, negrita: it.negrita, cursiva: it.cursiva });
+      }
+    }
+    return tramos.map((t) => (conFormato ? envolver(t.texto, t.negrita, t.cursiva) : t.texto)).join('');
+  }
+
+  function normalizarRepetido(texto) {
+    return texto.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  // Detecta encabezados/pies repetidos: textos en los márgenes que aparecen en muchas páginas.
+  function detectarRepetidos(paginas) {
+    if (paginas.length < 3) return new Set();
+    const conteo = new Map();
+    for (const lineas of paginas) {
+      const extremos = new Set(lineas.filter((l) => l.enMargen).map((l) => normalizarRepetido(l.textoPlano)));
+      for (const t of extremos) conteo.set(t, (conteo.get(t) || 0) + 1);
+    }
+    const repetidos = new Set();
+    for (const [t, n] of conteo) {
+      if (n >= Math.max(3, paginas.length * 0.5)) repetidos.add(t);
+    }
+    return repetidos;
+  }
+
+  function esNumeroDePagina(texto) {
+    return /^(p[áa]g(ina)?\.?\s*)?\d{1,4}(\s*(\/|de|of)\s*\d{1,4})?$/i.test(texto.trim());
+  }
+
+  // Tamaño de letra más frecuente (ponderado por cantidad de caracteres) = texto normal.
+  function tamañoCuerpo(paginas) {
+    const conteo = new Map();
+    for (const lineas of paginas) {
+      for (const l of lineas) {
+        const t = Math.round(l.alto * 2) / 2;
+        conteo.set(t, (conteo.get(t) || 0) + l.textoPlano.length);
+      }
+    }
+    let mejor = 0, max = -1;
+    for (const [t, n] of conteo) if (n > max) { max = n; mejor = t; }
+    return mejor;
+  }
+
+  function nivelesDeTitulo(paginas, cuerpo) {
+    const tamaños = new Set();
+    for (const lineas of paginas) {
+      for (const l of lineas) {
+        const t = Math.round(l.alto * 2) / 2;
+        if (t >= cuerpo * 1.15 && l.textoPlano.length <= 150) tamaños.add(t);
+      }
+    }
+    const ordenados = [...tamaños].sort((a, b) => b - a).slice(0, 3);
+    const niveles = new Map();
+    ordenados.forEach((t, i) => niveles.set(t, i + 1));
+    return niveles;
+  }
+
+  function lineasAMarkdown(paginas, { conFormato, separarPaginas }) {
+    const cuerpo = tamañoCuerpo(paginas);
+    const niveles = nivelesDeTitulo(paginas, cuerpo);
+    const bloques = [];
+    let actual = null; // { tipo: 'p' | 'li', texto, ultimaY, alto }
+
+    function cerrar() {
+      if (actual) bloques.push(actual);
+      actual = null;
+    }
+
+    paginas.forEach((lineas, indice) => {
+      if (separarPaginas && indice > 0) {
+        cerrar();
+        bloques.push({ tipo: 'hr' });
+      }
+      cerrar();
+
+      for (const l of lineas) {
+        const tamaño = Math.round(l.alto * 2) / 2;
+        const nivel = niveles.get(tamaño);
+        const plano = l.textoPlano;
+
+        if (nivel) {
+          // Títulos consecutivos del mismo nivel y muy juntos se unen (título en 2 líneas).
+          if (actual && actual.tipo === 'h' && actual.nivel === nivel && actual.ultimaY - l.y < l.alto * 1.6) {
+            actual.texto += ' ' + plano;
+            actual.ultimaY = l.y;
+            continue;
+          }
+          cerrar();
+          actual = { tipo: 'h', nivel, texto: plano, ultimaY: l.y, alto: l.alto };
+          continue;
+        }
+
+        let texto = unirItems(l.items, conFormato).trim();
+        const todoNegrita = l.items.every((it) => it.negrita);
+
+        if (VIÑETAS.test(plano) && plano.replace(VIÑETAS, '').length > 0) {
+          cerrar();
+          const limpio = unirItems(l.items, conFormato).trim().replace(/^(\**)[•●▪■◦○‣∙·\-–—*]\s*/, '$1');
+          actual = { tipo: 'li', marca: '-', texto: limpio, ultimaY: l.y, alto: l.alto, x: l.x };
+          continue;
+        }
+
+        const num = plano.match(NUMERADA);
+        if (num && plano.length > num[0].length) {
+          cerrar();
+          actual = { tipo: 'li', marca: `${num[1]}.`, texto: texto.replace(NUMERADA, ''), ultimaY: l.y, alto: l.alto, x: l.x };
+          continue;
+        }
+
+        // Línea corta toda en negrita, separada del resto: subtítulo menor.
+        if (conFormato && todoNegrita && plano.length <= 80 && !/[.,;:]$/.test(plano)) {
+          cerrar();
+          actual = { tipo: 'h', nivel: Math.min(niveles.size + 1, 4), texto: plano, ultimaY: l.y, alto: l.alto };
+          cerrar();
+          continue;
+        }
+
+        const separacion = actual ? actual.ultimaY - l.y : Infinity;
+        const continua = actual && actual.tipo !== 'h' && separacion > 0 && separacion < Math.max(actual.alto, l.alto) * 1.8;
+
+        if (continua) {
+          if (/[A-Za-zÁÉÍÓÚáéíóúÑñ]-$/.test(actual.texto)) {
+            actual.texto = actual.texto.slice(0, -1) + texto;
+          } else {
+            actual.texto += ' ' + texto;
+          }
+          actual.ultimaY = l.y;
+        } else {
+          cerrar();
+          actual = { tipo: 'p', texto, ultimaY: l.y, alto: l.alto };
+        }
+      }
+    });
+    cerrar();
+
+    const salida = [];
+    for (let i = 0; i < bloques.length; i++) {
+      const b = bloques[i];
+      const siguiente = bloques[i + 1];
+      let md;
+      if (b.tipo === 'hr') md = '---';
+      else if (b.tipo === 'h') md = `${'#'.repeat(b.nivel)} ${b.texto}`;
+      else if (b.tipo === 'li') md = `${b.marca} ${b.texto}`;
+      else md = b.texto.replace(/^(#{1,6}\s)/, '\\$1');
+      // Los elementos de una misma lista van sin línea en blanco entre ellos.
+      salida.push(md + (b.tipo === 'li' && siguiente && siguiente.tipo === 'li' ? '\n' : '\n\n'));
+    }
+
+    return salida.join('')
+      .replace(/\*\*\s*\*\*/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim() + '\n';
+  }
+
+  async function convertirAMarkdown(archivo, opts, avanzarProgreso) {
+    avanzarProgreso(10, 'Leyendo PDF...');
+    const buffer = await archivo.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+    let paginas = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      avanzarProgreso(15 + Math.round((i / pdf.numPages) * 70), `Analizando página ${i} de ${pdf.numPages}...`);
+      const page = await pdf.getPage(i);
+      paginas.push(await leerLineasDePagina(page, opts.conFormato));
+    }
+
+    if (opts.quitarEncabezados) {
+      const repetidos = detectarRepetidos(paginas);
+      const cuerpo = tamañoCuerpo(paginas);
+      paginas = paginas.map((lineas) => lineas.filter((l) => {
+        // Los títulos (letra más grande que el texto normal) nunca se consideran encabezados de página.
+        if (!l.enMargen || Math.round(l.alto * 2) / 2 >= cuerpo * 1.15) return true;
+        return !repetidos.has(normalizarRepetido(l.textoPlano)) && !esNumeroDePagina(l.textoPlano);
+      }));
+    }
+
+    avanzarProgreso(92, 'Generando Markdown...');
+    if (paginas.every((lineas) => lineas.length === 0)) return '';
+    return lineasAMarkdown(paginas, opts);
+  }
+
+  procesarBtn.addEventListener('click', async () => {
+    if (!archivoSeleccionado) return;
+
+    nombreBase = archivoSeleccionado.name.replace(/\.pdf$/i, '');
+    const opts = {
+      conFormato: document.getElementById('optFormato').checked,
+      quitarEncabezados: document.getElementById('optEncabezados').checked,
+      separarPaginas: document.getElementById('optSeparador').checked
+    };
+
+    ocultarResultado();
+    vistaPrevia.classList.add('hidden');
+    procesarBtn.disabled = true;
+    setProgreso(5, 'Leyendo archivo...');
+
+    try {
+      const markdown = await convertirAMarkdown(archivoSeleccionado, opts, setProgreso);
+      setProgreso(100, 'Completado');
+      ocultarProgreso();
+
+      if (!markdown.trim()) {
+        mostrarAlerta('warning', 'No se encontró texto seleccionable en este PDF (puede ser un documento escaneado). Prueba primero con la herramienta <a href="ocr.html">OCR de PDF escaneado</a>.');
+        return;
+      }
+
+      mdSalida.value = markdown;
+      vistaPrevia.classList.remove('hidden');
+      mostrarAlerta('success', 'Conversión lista. Revisa la vista previa y descarga tu archivo <strong>' + nombreBase + '.md</strong>.');
+    } catch (err) {
+      console.error(err);
+      ocultarProgreso();
+      mostrarAlerta('error', 'No se pudo leer el PDF. Verifica que no esté dañado o protegido con contraseña.');
+    } finally {
+      procesarBtn.disabled = false;
+    }
+  });
+
+  descargarBtn.addEventListener('click', () => {
+    descargarBlob(new TextEncoder().encode(mdSalida.value), `${nombreBase}.md`, 'text/markdown');
+  });
+
+  copiarBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(mdSalida.value);
+    } catch (e) {
+      mdSalida.select();
+      document.execCommand('copy');
+    }
+    copiarBtn.textContent = '¡Copiado!';
+    setTimeout(() => { copiarBtn.textContent = 'Copiar al portapapeles'; }, 1500);
+  });
+</script>
+</body>
+</html>
